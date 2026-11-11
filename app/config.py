@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     retry_base_delay: float = Field(default=1, gt=0)
     outbox_poll_interval: float = Field(default=0.5, gt=0)
     outbox_batch_size: int = Field(default=100, ge=1, le=1000)
+    demo_enabled: bool = False
+    demo_callback_base_url: str = "http://api:8000"
 
     @model_validator(mode="after")
     def check_delay_range(self) -> "Settings":

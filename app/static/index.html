@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#18252b" />
+    <meta
+      name="description"
+      content="MCC Basis — интерактивный стенд асинхронной обработки платежей, повторных доставок webhook и Outbox."
+    />
+    <title>MCC Basis · Payment playground</title>
+    <link rel="icon" href="/assets/mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/dashboard.css" />
+    <script src="/assets/dashboard.js" defer></script>
+  </head>
+  <body>
+    <svg
+      class="icon-definitions"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <defs>
+        <symbol id="i-grid" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="7" height="7" rx="1.5" />
+          <rect x="14" y="3" width="7" height="7" rx="1.5" />
+          <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          <rect x="14" y="14" width="7" height="7" rx="1.5" />
+        </symbol>
+        <symbol id="i-pay" viewBox="0 0 24 24">
+          <rect x="3" y="5" width="18" height="14" rx="3" />
+          <path d="M3 10h18M7 15h4" />
+        </symbol>
+        <symbol id="i-flow" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="6" height="6" rx="1.5" />
+          <rect x="15" y="15" width="6" height="6" rx="1.5" />
+          <path d="M9 6h6a3 3 0 0 1 3 3v6M6 9v6a3 3 0 0 0 3 3h6" />
+        </symbol>
+        <symbol id="i-code" viewBox="0 0 24 24">
+          <path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18" />
+        </symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24">
+          <path d="M5 12h14m-6-6 6 6-6 6" />
+        </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24">
+          <path d="m5 12 4 4L19 6" />
+        </symbol>
+        <symbol id="i-retry" viewBox="0 0 24 24">
+          <path d="M3 11a9 9 0 1 1 2.2 7M3 4v7h7" />
+        </symbol>
+        <symbol id="i-close" viewBox="0 0 24 24">
+          <path d="m6 6 12 12M18 6 6 18" />
+        </symbol>
+        <symbol id="i-search" viewBox="0 0 24 24">
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="m16 16 5 5" />
+        </symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14" />
+        </symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24">
+          <rect x="8" y="8" width="12" height="12" rx="2" />
+          <path d="M15 8V4H4v11h4" />
+        </symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24">
+          <path d="m12 2 8 4v6c0 5-8 10-8 10S4 17 4 12V6l8-4Z" />
+          <path d="m8 12 3 3 5-6" />
+        </symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 6v6l4 2" />
+        </symbol>
+        <symbol id="i-alert" viewBox="0 0 24 24">
+          <path d="m12 3 10 18H2L12 3Z" />
+          <path d="M12 9v4m0 3v1" />
+        </symbol>
+        <symbol id="i-log" viewBox="0 0 24 24">
+          <path d="M6 4h12v16H6zM9 8h6m-6 4h6m-6 4h3" />
+        </symbol>
+        <symbol id="i-external" viewBox="0 0 24 24">
+          <path d="M14 3h7v7m0-7L11 13M10 3H3v18h18v-7" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <aside class="sidebar">
+      <a class="brand" href="#overview" aria-label="MCC Basis — обзор"
+        ><img src="/assets/mark.svg" width="37" height="37" alt="" /><span
+          >MCC <b>Basis</b><small>PAYMENT PLAYGROUND</small></span
+        ></a
+      >
+      <div class="workspace">
+        <span class="workspace-icon">M</span>
+        <div>Демонстрационный стенд<small>Локальное окружение</small></div>
+        <span class="workspace-chevron">⌄</span>
+      </div>
+      <div class="nav-caption">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+      <nav aria-label="Главная навигация">
+        <a href="#overview" class="nav-item active" data-view="overview"
+          ><svg class="icon"><use href="#i-grid" /></svg>Обзор<span
+            class="nav-dot"
+          ></span
+        ></a>
+        <a href="#payments" class="nav-item" data-view="payments"
+          ><svg class="icon"><use href="#i-pay" /></svg>Платежи<span
+            id="nav-count"
+            class="nav-count"
+            >0</span
+          ></a
+        >
+        <a href="#architecture" class="nav-item" data-view="architecture"
+          ><svg class="icon"><use href="#i-flow" /></svg>Как это работает</a
+        >
+        <a href="#api" class="nav-item" data-view="api"
+          ><svg class="icon"><use href="#i-code" /></svg>API reference</a
+        >
+      </nav>
+      <div class="sidebar-note">
+        <div class="note-symbol">↗</div>
+        <strong>От запроса до результата.</strong>
+        <p>
+          Посмотрите, как платёж проходит очередь, повторы и доставку webhook.
+        </p>
+        <a href="#architecture">Разобрать архитектуру <span>→</span></a>
+      </div>
+      <div class="sidebar-bottom">
+        <a
+          href="https://github.com/jaFuart/MCC-Basis"
+          target="_blank"
+          rel="noopener noreferrer"
+          ><svg class="icon"><use href="#i-code" /></svg>Исходный код<svg
+            class="icon external"
+          >
+            <use href="#i-external" /></svg
+        ></a>
+        <div class="sidebar-version">
+          <span><i class="live-dot"></i> v1.1 · Demo environment</span
+          ><button
+            id="logout"
+            class="logout"
+            title="Сменить API-ключ"
+            aria-label="Сменить API-ключ"
+          >
+            ↪
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="breadcrumb">
+          Рабочее пространство <span>/</span>
+          <strong id="breadcrumb-current">Обзор</strong>
+        </div>
+        <div class="topbar-right">
+          <span id="connection-status" class="connection"
+            ><i class="live-dot"></i>Подключение</span
+          ><span class="top-divider"></span
+          ><button
+            id="mobile-logout"
+            class="avatar"
+            type="button"
+            title="Сменить API-ключ"
+            aria-label="Сменить API-ключ"
+          >
+            MB
+          </button>
+        </div>
+      </header>
+      <main>
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow">MCC BASIS / OPERATIONS</div>
+            <h1 id="page-title">
+              Платежи под контролем<span class="title-dot">.</span>
+            </h1>
+            <p id="page-subtitle">
+              Весь путь платежа — от первого запроса до последнего webhook.
+            </p>
+          </div>
+          <button id="new-payment" class="button primary">
+            <svg class="icon"><use href="#i-plus" /></svg>Новый платёж
+          </button>
+        </div>
+
+        <div id="overview-view">
+          <section class="hero" aria-labelledby="hero-title">
+            <div class="hero-copy">
+              <div class="hero-tag">
+                <span class="small-dot"></span> ИНТЕРАКТИВНЫЙ СТЕНД
+              </div>
+              <h2 id="hero-title">
+                Хороший платёж проходит.<br />Хорошая система
+                <em>не теряет остальные.</em>
+              </h2>
+              <p>
+                Запустите четыре сценария и проследите за реальной
+                обработкой,<br class="desktop-break" />
+                повторными попытками и восстановлением доставки.
+              </p>
+              <button id="run-all" class="button dark">
+                Запустить демо
+                <svg class="icon"><use href="#i-arrow" /></svg></button
+              ><span class="hero-footnote"
+                >Эмуляция шлюза · без реальных списаний</span
+              >
+            </div>
+            <div class="hero-visual" aria-hidden="true">
+              <span class="orbit orbit-one"></span
+              ><span class="orbit orbit-two"></span>
+              <div class="visual-chip chip-request">
+                <span class="visual-code">↗</span>
+                <div>POST /payments<small>202 Accepted</small></div>
+                <span class="chip-check">✓</span>
+              </div>
+              <div class="visual-path"></div>
+              <div class="visual-chip chip-event">
+                <span class="queue-glyph">≋</span>
+                <div>payments.new<small>Событие сохранено</small></div>
+                <span class="signal-dot"></span>
+              </div>
+              <div class="visual-chip chip-delivery">
+                <span class="delivery-glyph">✓</span>
+                <div>Webhook delivered<small>Результат у клиента</small></div>
+              </div>
+              <span class="visual-caption">ASYNCHRONOUS BY DESIGN</span>
+            </div>
+          </section>
+
+          <section class="metrics" aria-label="Сводка платежей">
+            <article class="metric">
+              <div class="metric-label">
+                Всего платежей<svg class="icon"><use href="#i-pay" /></svg>
+              </div>
+              <div class="metric-value" id="metric-total">—</div>
+              <div class="metric-foot">
+                <span class="metric-indicator neutral"></span
+                ><span id="metric-pending">Ожидание данных</span>
+              </div>
+            </article>
+            <article class="metric">
+              <div class="metric-label">
+                Успешные оплаты<svg class="icon"><use href="#i-check" /></svg>
+              </div>
+              <div class="metric-value" id="metric-success">—</div>
+              <div class="metric-foot">
+                <span class="metric-indicator green"></span
+                ><span id="metric-rate">Результат платёжного шлюза</span>
+              </div>
+            </article>
+            <article class="metric">
+              <div class="metric-label">
+                Webhook доставлен<svg class="icon"><use href="#i-flow" /></svg>
+              </div>
+              <div class="metric-value" id="metric-delivered">—</div>
+              <div class="metric-foot">
+                <span class="metric-indicator green"></span
+                ><span id="metric-retry">Подтверждено получателем</span>
+              </div>
+            </article>
+            <article class="metric">
+              <div class="metric-label">
+                Требуют внимания<svg class="icon"><use href="#i-alert" /></svg>
+              </div>
+              <div class="metric-value" id="metric-dlq">—</div>
+              <div class="metric-foot">
+                <span class="metric-indicator orange"></span
+                ><span>Исчерпаны попытки доставки</span>
+              </div>
+            </article>
+          </section>
+
+          <section class="lab-section">
+            <div class="section-heading">
+              <div>
+                <h2>
+                  Проверьте систему в деле
+                  <span class="label-pill">4 сценария</span>
+                </h2>
+                <p>
+                  Каждый запуск создаёт настоящий платёж в базе и сообщение в
+                  очереди.
+                </p>
+              </div>
+              <span class="small-muted">НАЖМИТЕ, ЧТОБЫ ЗАПУСТИТЬ</span>
+            </div>
+            <div class="scenario-grid">
+              <button class="scenario-card" data-scenario="success">
+                <span class="scenario-symbol success"
+                  ><svg class="icon"><use href="#i-check" /></svg></span
+                ><span class="scenario-content"
+                  ><strong>Всё по плану</strong
+                  ><span>Успешная оплата и доставка</span
+                  ><small>SUCCEEDED → HTTP 204</small></span
+                ><span class="scenario-arrow">↗</span>
+              </button>
+              <button class="scenario-card" data-scenario="decline">
+                <span class="scenario-symbol decline"
+                  ><svg class="icon"><use href="#i-close" /></svg></span
+                ><span class="scenario-content"
+                  ><strong>Отказ шлюза</strong
+                  ><span>Отказ тоже нужно доставить</span
+                  ><small>FAILED → HTTP 204</small></span
+                ><span class="scenario-arrow">↗</span>
+              </button>
+              <button class="scenario-card" data-scenario="retry">
+                <span class="scenario-symbol retry"
+                  ><svg class="icon"><use href="#i-retry" /></svg></span
+                ><span class="scenario-content"
+                  ><strong>С третьей попытки</strong
+                  ><span>Две ошибки, затем доставка</span
+                  ><small>503 → 503 → 204</small></span
+                ><span class="scenario-arrow">↗</span>
+              </button>
+              <button class="scenario-card" data-scenario="dlq">
+                <span class="scenario-symbol dlq"
+                  ><svg class="icon"><use href="#i-alert" /></svg></span
+                ><span class="scenario-content"
+                  ><strong>До последнего</strong
+                  ><span>Лимит попыток и очередь DLQ</span
+                  ><small>503 × 3 → DEAD LETTER</small></span
+                ><span class="scenario-arrow">↗</span>
+              </button>
+            </div>
+            <p id="demo-disabled" class="inline-notice" hidden>
+              Демосценарии выключены. Для локального стенда задайте
+              DEMO_ENABLED=true.
+            </p>
+          </section>
+        </div>
+
+        <section
+          id="payments-section"
+          class="payments-panel"
+          aria-labelledby="payments-title"
+        >
+          <div class="payments-header">
+            <div>
+              <h2 id="payments-title">
+                Последние платежи
+                <span id="payment-count" class="count-badge">0</span>
+              </h2>
+              <p>
+                Нажмите на платёж, чтобы посмотреть события и ответы webhook.
+              </p>
+            </div>
+            <div class="table-live">
+              <i class="live-dot"></i> Обновляется автоматически
+            </div>
+          </div>
+          <div class="table-toolbar">
+            <div class="filter-tabs" role="group" aria-label="Фильтр платежей">
+              <button class="filter active" data-filter="all">
+                Все платежи</button
+              ><button class="filter" data-filter="succeeded">Успешные</button
+              ><button class="filter" data-filter="pending">В обработке</button
+              ><button class="filter" data-filter="dead_lettered">
+                DLQ <span id="filter-dlq-count">0</span>
+              </button>
+            </div>
+            <label class="search"
+              ><svg class="icon"><use href="#i-search" /></svg
+              ><input
+                id="payment-search"
+                type="search"
+                placeholder="ID или описание"
+                maxlength="100"
+                aria-label="Поиск платежей"
+            /></label>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>ПЛАТЁЖ</th>
+                  <th>СУММА</th>
+                  <th>СТАТУС</th>
+                  <th>WEBHOOK</th>
+                  <th>СОЗДАН</th>
+                  <th><span class="sr-only">Подробнее</span></th>
+                </tr>
+              </thead>
+              <tbody id="payments-body">
+                <tr>
+                  <td colspan="6">
+                    <div class="empty-state">
+                      <span>↗</span
+                      ><strong>Здесь начнётся история платежей</strong>
+                      <p>Подключитесь к API и запустите первый сценарий.</p>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-footer">
+            <span id="pagination-label">Нет платежей</span>
+            <div>
+              <button
+                id="previous-page"
+                class="pagination-button"
+                disabled
+                aria-label="Предыдущая страница"
+              >
+                ←</button
+              ><button
+                id="next-page"
+                class="pagination-button"
+                disabled
+                aria-label="Следующая страница"
+              >
+                →
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section id="architecture-view" class="content-page" hidden>
+          <div class="architecture-intro">
+            <span class="label-pill">ГАРАНТИИ ДОСТАВКИ</span>
+            <h2>Запрос заканчивается.<br />Обработка продолжается.</h2>
+            <p>
+              API сохраняет платёж и событие одной транзакцией. Отдельный
+              consumer обрабатывает сообщение и доставляет результат. Стенд
+              позволяет наблюдать каждый этап.
+            </p>
+          </div>
+          <div class="architecture-flow">
+            <article>
+              <span>01</span><svg class="icon"><use href="#i-code" /></svg>
+              <h3>FastAPI</h3>
+              <p>
+                Проверка ключа и тела запроса. Идемпотентность на уровне БД.
+              </p>
+              <code>202 Accepted</code>
+            </article>
+            <b>→</b>
+            <article>
+              <span>02</span><svg class="icon"><use href="#i-log" /></svg>
+              <h3>PostgreSQL</h3>
+              <p>Платёж + Outbox в одной транзакции. История событий.</p>
+              <code>COMMIT</code>
+            </article>
+            <b>→</b>
+            <article>
+              <span>03</span><svg class="icon"><use href="#i-flow" /></svg>
+              <h3>RabbitMQ</h3>
+              <p>Durable quorum queues, publisher confirms и ручной ACK.</p>
+              <code>payments.new</code>
+            </article>
+            <b>→</b>
+            <article>
+              <span>04</span><svg class="icon"><use href="#i-pay" /></svg>
+              <h3>Consumer</h3>
+              <p>Результат шлюза сохраняется до HTTP-запроса к получателю.</p>
+              <code>2–5 секунд</code>
+            </article>
+          </div>
+          <div class="architecture-notes">
+            <article>
+              <svg class="icon"><use href="#i-shield" /></svg>
+              <h3>Повторы без повторной оплаты</h3>
+              <p>
+                Результат шлюза хранится в БД. Повторная доставка использует тот
+                же платёж, а поколение доставки отсекает устаревшие сообщения.
+              </p>
+            </article>
+            <article>
+              <svg class="icon"><use href="#i-retry" /></svg>
+              <h3>Ошибки — часть сценария</h3>
+              <p>
+                Три попытки, экспоненциальная задержка и DLQ. Доставку из DLQ
+                можно возобновить в карточке платежа.
+              </p>
+            </article>
+            <article>
+              <svg class="icon"><use href="#i-clock" /></svg>
+              <h3>At least once</h3>
+              <p>
+                После сбоя событие может прийти повторно. Получатель
+                дедуплицирует webhook по стабильному Idempotency-Key.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="api-view" class="content-page" hidden>
+          <div class="api-intro">
+            <span class="label-pill">REST API · v1</span>
+            <h2>Тот же API.<br />Без интерфейса.</h2>
+            <p>
+              Все операции с платежами требуют X-API-Key. Суммы передаются
+              строкой, даты — в UTC. Текущий ключ не попадает в примеры.
+            </p>
+            <button id="download-schema" class="button secondary">
+              <svg class="icon"><use href="#i-code" /></svg>Скачать OpenAPI
+            </button>
+          </div>
+          <div id="api-operations" class="api-operations"></div>
+          <div class="code-example">
+            <div>
+              <span>Создать платёж</span
+              ><button
+                id="copy-example"
+                class="icon-button"
+                aria-label="Скопировать пример запроса"
+              >
+                <svg class="icon"><use href="#i-copy" /></svg>
+              </button>
+            </div>
+            <pre id="curl-example"></pre>
+          </div>
+        </section>
+
+        <footer class="page-footer">
+          <span
+            >MCC Basis <span class="footer-separator">/</span> Asynchronous
+            payment processing</span
+          ><span
+            >FastAPI <i>·</i> PostgreSQL <i>·</i> RabbitMQ
+            <i>·</i> FastStream</span
+          >
+        </footer>
+      </main>
+    </div>
+
+    <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
+    <aside
+      id="payment-drawer"
+      class="payment-drawer"
+      aria-labelledby="drawer-title"
+      role="dialog"
+      aria-modal="true"
+      hidden
+    >
+      <header class="drawer-header">
+        <div>
+          <div class="eyebrow">PAYMENT DETAILS</div>
+          <h2 id="drawer-title">Платёж</h2>
+        </div>
+        <button
+          id="close-drawer"
+          class="icon-button"
+          aria-label="Закрыть карточку"
+        >
+          <svg class="icon"><use href="#i-close" /></svg>
+        </button>
+      </header>
+      <div id="drawer-content" class="drawer-content"></div>
+    </aside>
+
+    <dialog id="payment-modal" class="modal">
+      <form id="payment-form">
+        <div class="modal-heading">
+          <div>
+            <div class="eyebrow">PAYMENT REQUEST</div>
+            <h2>Новый платёж</h2>
+          </div>
+          <button
+            type="button"
+            id="close-modal"
+            class="icon-button"
+            aria-label="Закрыть форму"
+          >
+            <svg class="icon"><use href="#i-close" /></svg>
+          </button>
+        </div>
+        <p class="modal-description">
+          Отправьте запрос и наблюдайте обработку в реальном времени.
+        </p>
+        <div class="form-row">
+          <label
+            >Сумма<input
+              name="amount"
+              type="number"
+              min="0.01"
+              max="9999999999999999.99"
+              step="0.01"
+              value="1490.00"
+              required /></label
+          ><label
+            >Валюта<select name="currency">
+              <option>RUB</option>
+              <option>USD</option>
+              <option>EUR</option>
+            </select></label
+          >
+        </div>
+        <label
+          >Описание<input
+            name="description"
+            maxlength="1000"
+            value="Оплата заказа"
+            required /></label
+        ><label
+          >Сценарий<select name="scenario">
+            <option value="success">Всё по плану — успешная оплата</option>
+            <option value="decline">Отказ платёжного шлюза</option>
+            <option value="retry">Webhook с третьей попытки</option>
+            <option value="dlq">Три ошибки и очередь DLQ</option>
+            <option value="custom">Свой webhook</option>
+          </select></label
+        ><label id="custom-webhook-field" hidden
+          >Webhook URL<input
+            name="webhook_url"
+            type="url"
+            placeholder="https://your-service.example/webhook"
+        /></label>
+        <div class="form-hint">
+          <svg class="icon"><use href="#i-shield" /></svg>Новый Idempotency-Key
+          создаётся автоматически.
+        </div>
+        <div id="form-error" class="form-error" role="alert" hidden></div>
+        <button type="submit" class="button primary full-width">
+          Создать платёж <svg class="icon"><use href="#i-arrow" /></svg>
+        </button>
+      </form>
+    </dialog>
+
+    <dialog id="auth-modal" class="modal auth-modal">
+      <form id="auth-form">
+        <img src="/assets/mark.svg" width="47" height="47" alt="" />
+        <div class="eyebrow">MCC BASIS · PAYMENT PLAYGROUND</div>
+        <h2>Подключиться к стенду</h2>
+        <p>
+          Введите API-ключ из файла .env.<br />Он сохранится только в этой
+          вкладке.
+        </p>
+        <label
+          >API-ключ<input
+            id="api-key-input"
+            type="password"
+            placeholder="API_KEY из .env"
+            autocomplete="off"
+            required
+        /></label>
+        <div id="auth-error" class="form-error" role="alert" hidden></div>
+        <button type="submit" class="button primary full-width">
+          Подключиться <svg class="icon"><use href="#i-arrow" /></svg></button
+        ><small>Локальный запуск: docker compose up --build -d</small>
+      </form>
+    </dialog>
+    <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  </body>
+</html>

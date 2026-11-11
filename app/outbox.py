@@ -8,10 +8,11 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.broker import publish_event
+from app.activity import record_activity
+from app.broker import PAYMENT_EVENT, publish_event
 from app.config import get_settings
 from app.db import SessionFactory
-from app.models import Outbox
+from app.models import Outbox, Payment
 
 logger = logging.getLogger(__name__)
 Publisher = Callable[..., Awaitable[None]]
@@ -55,6 +56,19 @@ async def publish_batch(
             else:
                 event.published_at = datetime.now(UTC)
                 event.last_error = None
+                if event.event_type == PAYMENT_EVENT:
+                    payment = await session.get(Payment, event.payment_id)
+                    if payment is not None:
+                        record_activity(
+                            session,
+                            payment,
+                            "outbox.published",
+                            attempt=event.payload.get("attempt", 1),
+                            details={
+                                "generation": event.payload.get("generation", 0),
+                                "outbox_id": str(event.id),
+                            },
+                        )
                 published += 1
     return published
 

@@ -43,6 +43,8 @@ jobs:
           docker compose up -d --build --wait --wait-timeout 180
       - name: Verify API, queues and webhooks
         run: docker compose exec -T api python scripts/smoke.py
+      - name: Verify dashboard demo scenarios
+        run: docker compose exec -T api python scripts/demo_smoke.py
       - name: Verify persistence after restarting every service
         run: |
           docker compose restart postgres rabbitmq api consumer
@@ -64,9 +66,19 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve image name
+      - name: Resolve image name and version
         id: image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mcc-basis" >> "$GITHUB_OUTPUT"
+        run: |
+          python3 - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          name = f"ghcr.io/{os.environ['GITHUB_REPOSITORY_OWNER'].lower()}/mcc-basis"
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"name={name}\nversion={version}\n")
+          PY
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -79,9 +91,12 @@ jobs:
           push: true
           tags: |
             ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ steps.image.outputs.version }}
             ${{ steps.image.outputs.name }}:${{ github.sha }}
           labels: |
             org.opencontainers.image.title=MCC Basis
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.image.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

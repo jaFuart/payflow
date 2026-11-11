@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -13,7 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app import worker
 from app.broker import DEAD_LETTER_EVENT, PAYMENT_EVENT, broker, payment_exchange
-from app.models import Base, Outbox, Payment
+from app.models import Base, Outbox, Payment, PaymentActivity
 from app.worker import PaymentEvent, process_payment
 
 
@@ -68,6 +69,18 @@ async def test_gateway_result_webhook_and_duplicate(worker_database, gateway_sta
     assert stored.processing_attempts == 1
     gateway.assert_awaited_once()
     webhook.assert_awaited_once()
+    async with worker_database() as session:
+        activities = (
+            await session.scalars(
+                select(PaymentActivity).order_by(PaymentActivity.created_at, PaymentActivity.id)
+            )
+        ).all()
+    assert [entry.event_type for entry in activities] == [
+        "processing.started",
+        f"gateway.{gateway_status}",
+        "webhook.delivered",
+    ]
+    assert all(entry.details["generation"] == 0 for entry in activities)
 
 
 async def test_webhook_retries_three_times_with_exponential_outbox_delay(worker_database):
@@ -102,6 +115,15 @@ async def test_webhook_retries_three_times_with_exponential_outbox_delay(worker_
     assert (events[0].available_at - events[0].created_at).total_seconds() == 1
     assert (events[1].available_at - events[1].created_at).total_seconds() == 2
     assert events[2].payload["error"] == stored.last_error
+    assert all(event.payload["generation"] == 0 for event in events)
+    async with worker_database() as session:
+        activities = list((await session.scalars(select(PaymentActivity))).all())
+    names = [entry.event_type for entry in activities]
+    assert names.count("processing.started") == 1
+    assert names.count("gateway.succeeded") == 1
+    assert names.count("webhook.failed") == 3
+    assert names.count("retry.scheduled") == 2
+    assert names.count("payment.dead_lettered") == 1
 
 
 async def test_retry_recovery_never_calls_gateway_again(worker_database):
@@ -269,6 +291,8 @@ async def test_webhook_http_contract(worker_database, monkeypatch):
     assert requests[0].method == "POST"
     assert requests[0].headers["Idempotency-Key"] == str(payment.id)
     assert requests[0].headers["X-Webhook-ID"] == str(payment.id)
+    assert requests[0].headers["X-Webhook-Attempt"] == "0"
+    assert requests[0].headers["X-Webhook-Generation"] == "0"
     assert b'"amount":"125.50"' in requests[0].content
     assert b'"status":"succeeded"' in requests[0].content
 
@@ -284,3 +308,141 @@ async def test_webhook_redirect_is_an_error(worker_database, monkeypatch):
     )
     with pytest.raises(RuntimeError, match="HTTP 302"):
         await worker.send_webhook(payment)
+
+
+async def test_redelivery_generation_fences_old_messages_and_preserves_gateway_result(
+    worker_database,
+):
+    payment = await create_payment(worker_database)
+    gateway = AsyncMock(return_value="succeeded")
+    failed_webhook = AsyncMock(side_effect=RuntimeError("receiver unavailable"))
+    for attempt in (1, 2, 3):
+        await process_payment(
+            PaymentEvent(payment_id=payment.id, attempt=attempt),
+            session_factory=worker_database,
+            gateway=gateway,
+            webhook=failed_webhook,
+        )
+    original = await read_payment(worker_database, payment.id)
+    async with worker_database() as session, session.begin():
+        stored = await session.get(Payment, payment.id)
+        stored.delivery_generation += 1
+        stored.processing_attempts = 0
+        stored.last_error = None
+        stored.dead_lettered_at = None
+
+    webhook = AsyncMock()
+    for generation, attempt in ((0, 1), (0, 2), (0, 3), (2, 1)):
+        await process_payment(
+            PaymentEvent(payment_id=payment.id, attempt=attempt, generation=generation),
+            session_factory=worker_database,
+            gateway=gateway,
+            webhook=webhook,
+        )
+    before_current_delivery = await read_payment(worker_database, payment.id)
+    assert before_current_delivery.processing_attempts == 0
+    webhook.assert_not_awaited()
+    current_event = PaymentEvent(payment_id=payment.id, generation=1)
+    for _ in range(2):
+        await process_payment(
+            current_event,
+            session_factory=worker_database,
+            gateway=gateway,
+            webhook=webhook,
+        )
+    recovered = await read_payment(worker_database, payment.id)
+    assert recovered.status == original.status == "succeeded"
+    assert recovered.processed_at == original.processed_at
+    assert recovered.delivery_generation == 1
+    assert recovered.processing_attempts == 1
+    assert recovered.webhook_delivered_at is not None
+    assert recovered.dead_lettered_at is None
+    gateway.assert_awaited_once()
+    webhook.assert_awaited_once()
+    async with worker_database() as session:
+        activities = list((await session.scalars(select(PaymentActivity))).all())
+    recovered_activities = [entry for entry in activities if entry.details["generation"] == 1]
+    assert sorted(entry.event_type for entry in recovered_activities) == [
+        "processing.started",
+        "webhook.delivered",
+    ]
+
+
+async def test_generation_is_checked_again_before_webhook(worker_database):
+    payment = await create_payment(worker_database)
+    calls = 0
+
+    @asynccontextmanager
+    async def sessions():
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            async with worker_database() as session, session.begin():
+                stored = await session.get(Payment, payment.id)
+                stored.delivery_generation = 1
+                stored.processing_attempts = 0
+        async with worker_database() as session:
+            yield session
+
+    gateway = AsyncMock(return_value="succeeded")
+    webhook = AsyncMock()
+    await process_payment(
+        PaymentEvent(payment_id=payment.id),
+        session_factory=sessions,
+        gateway=gateway,
+        webhook=webhook,
+    )
+    stored = await read_payment(worker_database, payment.id)
+    assert stored.delivery_generation == 1
+    assert stored.processing_attempts == 0
+    assert stored.status == "succeeded"
+    webhook.assert_not_awaited()
+
+
+async def test_retry_payloads_preserve_delivery_generation(worker_database):
+    payment = await create_payment(worker_database)
+    async with worker_database() as session, session.begin():
+        stored = await session.get(Payment, payment.id)
+        stored.delivery_generation = 4
+    for attempt in (1, 2, 3):
+        await process_payment(
+            PaymentEvent(payment_id=payment.id, attempt=attempt, generation=4),
+            session_factory=worker_database,
+            gateway=AsyncMock(return_value="succeeded"),
+            webhook=AsyncMock(side_effect=RuntimeError("unavailable")),
+        )
+    async with worker_database() as session:
+        events = list((await session.scalars(select(Outbox))).all())
+        activities = list((await session.scalars(select(PaymentActivity))).all())
+    assert len(events) == 3
+    assert all(event.payload["generation"] == 4 for event in events)
+    assert all(entry.details["generation"] == 4 for entry in activities)
+
+
+@pytest.mark.parametrize(
+    ("demo_enabled", "scenario", "expected"),
+    [
+        (True, "success", "succeeded"),
+        (True, "retry", "succeeded"),
+        (True, "dlq", "succeeded"),
+        (True, "decline", "failed"),
+        (True, None, "failed"),
+        (False, "success", "failed"),
+    ],
+)
+async def test_demo_gateway_is_deterministic_only_when_enabled(
+    worker_database, monkeypatch, demo_enabled, scenario, expected
+):
+    payment = await create_payment(worker_database)
+    payment.demo_scenario = scenario
+    monkeypatch.setattr(
+        worker,
+        "get_settings",
+        lambda: SimpleNamespace(
+            demo_enabled=demo_enabled,
+            gateway_delay_min=0,
+            gateway_delay_max=0,
+            gateway_success_rate=0,
+        ),
+    )
+    assert await worker.emulate_gateway(payment) == expected

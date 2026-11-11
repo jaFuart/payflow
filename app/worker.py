@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.activity import record_activity
 from app.broker import (
     DEAD_LETTER_EVENT,
     MAX_ATTEMPTS,
@@ -39,6 +40,7 @@ class PaymentEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     payment_id: UUID
     attempt: int = Field(default=1, ge=1, le=MAX_ATTEMPTS, strict=True)
+    generation: int = Field(default=0, ge=0, strict=True)
 
 
 class UnknownPaymentError(Exception):
@@ -48,6 +50,11 @@ class UnknownPaymentError(Exception):
 async def emulate_gateway(payment: Payment) -> str:
     settings = get_settings()
     await asyncio.sleep(random.uniform(settings.gateway_delay_min, settings.gateway_delay_max))
+    if settings.demo_enabled:
+        if payment.demo_scenario == "decline":
+            return "failed"
+        if payment.demo_scenario in {"success", "retry", "dlq"}:
+            return "succeeded"
     return "succeeded" if random.random() < settings.gateway_success_rate else "failed"
 
 
@@ -83,6 +90,8 @@ async def send_webhook(payment: Payment) -> None:
                 "Idempotency-Key": str(payment.id),
                 "X-Webhook-ID": str(payment.id),
                 "X-Webhook-Event": "payment.processed",
+                "X-Webhook-Attempt": str(payment.processing_attempts),
+                "X-Webhook-Generation": str(payment.delivery_generation),
             },
         )
         if not 200 <= response.status_code < 300:
@@ -91,7 +100,8 @@ async def send_webhook(payment: Payment) -> None:
 
 def _finished(payment: Payment, event: PaymentEvent) -> bool:
     return (
-        payment.webhook_delivered_at is not None
+        event.generation != payment.delivery_generation
+        or payment.webhook_delivered_at is not None
         or payment.dead_lettered_at is not None
         or event.attempt < payment.processing_attempts
         # A failed attempt already has a durable retry or DLQ record. A
@@ -105,11 +115,28 @@ async def _record_failure(
 ) -> None:
     now = datetime.now(UTC)
     payment.last_error = f"{type(exc).__name__}: {exc}"[:2000]
-    payload: dict[str, Any] = {"payment_id": str(payment.id), "attempt": event.attempt + 1}
+    payload: dict[str, Any] = {
+        "payment_id": str(payment.id),
+        "attempt": event.attempt + 1,
+        "generation": event.generation,
+    }
     if event.attempt < MAX_ATTEMPTS:
         event_type = PAYMENT_EVENT
         delay = get_settings().retry_base_delay * 2 ** (event.attempt - 1)
         available_at = now + timedelta(seconds=delay)
+        record_activity(
+            session,
+            payment,
+            "retry.scheduled",
+            attempt=event.attempt,
+            details={
+                "generation": event.generation,
+                "next_attempt": event.attempt + 1,
+                "delay_seconds": delay,
+                "available_at": available_at.isoformat(),
+                "error": payment.last_error,
+            },
+        )
     else:
         event_type = DEAD_LETTER_EVENT
         available_at = now
@@ -124,7 +151,15 @@ async def _record_failure(
             "attempt": event.attempt,
             "error": payment.last_error,
             "failed_at": now.isoformat(),
+            "generation": event.generation,
         }
+        record_activity(
+            session,
+            payment,
+            "payment.dead_lettered",
+            attempt=event.attempt,
+            details={"generation": event.generation, "error": payment.last_error},
+        )
     session.add(
         Outbox(
             id=uuid4(),
@@ -155,6 +190,14 @@ async def process_payment(
             raise UnknownPaymentError(str(event.payment_id))
         if _finished(payment, event):
             return
+        if payment.processing_attempts == 0:
+            record_activity(
+                session,
+                payment,
+                "processing.started",
+                attempt=event.attempt,
+                details={"generation": event.generation},
+            )
         payment.processing_attempts = event.attempt
         payment.last_error = None
         if payment.status == "pending":
@@ -163,10 +206,28 @@ async def process_payment(
                 if payment.status not in {"succeeded", "failed"}:
                     raise ValueError("Gateway returned an unsupported status")
                 payment.processed_at = datetime.now(UTC)
+                record_activity(
+                    session,
+                    payment,
+                    f"gateway.{payment.status}",
+                    attempt=event.attempt,
+                    details={"generation": event.generation, "status": payment.status},
+                )
             except Exception as exc:
                 # Keep pending on retriable gateway exceptions, unlike an
                 # ordinary declined payment which is terminal and notified.
                 payment.status = "pending"
+                record_activity(
+                    session,
+                    payment,
+                    "gateway.failed",
+                    attempt=event.attempt,
+                    details={
+                        "generation": event.generation,
+                        "error": f"{type(exc).__name__}: {exc}"[:2000],
+                        "retryable": event.attempt < MAX_ATTEMPTS,
+                    },
+                )
                 await _record_failure(session, payment, event, exc)
                 return
 
@@ -181,6 +242,16 @@ async def process_payment(
         try:
             await webhook(payment)
         except Exception as exc:
+            record_activity(
+                session,
+                payment,
+                "webhook.failed",
+                attempt=event.attempt,
+                details={
+                    "generation": event.generation,
+                    "error": f"{type(exc).__name__}: {exc}"[:2000],
+                },
+            )
             await _record_failure(session, payment, event, exc)
             logger.warning(
                 "Payment %s attempt %s failed: %s", payment.id, event.attempt, payment.last_error
@@ -188,6 +259,13 @@ async def process_payment(
         else:
             payment.webhook_delivered_at = datetime.now(UTC)
             payment.last_error = None
+            record_activity(
+                session,
+                payment,
+                "webhook.delivered",
+                attempt=event.attempt,
+                details={"generation": event.generation},
+            )
             logger.info("Payment %s completed with status %s", payment.id, payment.status)
 
 

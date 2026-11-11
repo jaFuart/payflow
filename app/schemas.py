@@ -44,3 +44,55 @@ class PaymentDetails(PaymentAccepted):
     webhook_delivered_at: datetime | None
     dead_lettered_at: datetime | None
     last_error: str | None
+    demo_scenario: str | None = None
+    delivery_generation: int = 0
+
+
+class PaymentList(BaseModel):
+    items: list[PaymentDetails]
+    total: int
+    limit: int
+    offset: int
+
+
+class ActivityDetails(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    event_type: str
+    attempt: int | None
+    details: dict[str, JsonValue]
+    created_at: datetime
+
+
+class ActivityList(BaseModel):
+    items: list[ActivityDetails]
+
+
+class ReceiptDetails(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    delivery_generation: int
+    attempt: int
+    status_code: int
+    payload: dict[str, JsonValue]
+    created_at: datetime
+
+
+class ReceiptList(BaseModel):
+    items: list[ReceiptDetails]
+
+
+class OverviewStats(BaseModel):
+    total: int
+    pending: int
+    succeeded: int
+    failed: int
+    delivered: int
+    dead_lettered: int
+    retrying: int
+    outbox_pending: int
+    outbox_published: int
+    demo_enabled: bool
+    as_of: datetime

@@ -7,8 +7,8 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.broker import PAYMENT_EVENT
-from app.models import Base, Outbox, Payment
+from app.broker import DEAD_LETTER_EVENT, PAYMENT_EVENT
+from app.models import Base, Outbox, Payment, PaymentActivity
 from app.outbox import publish_batch
 
 
@@ -67,6 +67,11 @@ async def test_only_confirmed_events_are_marked_published(outbox_database):
     publisher.assert_awaited_once_with(PAYMENT_EVENT, event.payload, message_id=str(event.id))
     assert await publish_batch(outbox_database, publisher, now=now) == 0
     assert publisher.await_count == 1
+    async with outbox_database() as session:
+        activities = list((await session.scalars(select(PaymentActivity))).all())
+    assert len(activities) == 1
+    assert activities[0].event_type == "outbox.published"
+    assert activities[0].details == {"generation": 0, "outbox_id": str(event.id)}
 
 
 async def test_failure_stays_unpublished_and_retries_after_delay(outbox_database):
@@ -80,6 +85,8 @@ async def test_failure_stays_unpublished_and_retries_after_delay(outbox_database
     assert (stored.available_at - now.replace(tzinfo=None)).total_seconds() == 1
     assert await publish_batch(outbox_database, publisher, now=now + timedelta(seconds=0.5)) == 0
     assert publisher.await_count == 1
+    async with outbox_database() as session:
+        assert (await session.scalars(select(PaymentActivity))).all() == []
     publisher.side_effect = None
     assert await publish_batch(outbox_database, publisher, now=now + timedelta(seconds=1)) == 1
     stored = await read_event(outbox_database, event.id)
@@ -146,3 +153,25 @@ async def test_outbox_and_payment_rollback_together(outbox_database):
     async with outbox_database() as session:
         assert await session.get(Payment, payment_id) is None
         assert (await session.scalars(select(Outbox))).all() == []
+
+
+async def test_dead_letter_publication_does_not_add_processing_activity(outbox_database):
+    now, event = await seed(outbox_database)
+    async with outbox_database() as session, session.begin():
+        stored = await session.get(Outbox, event.id)
+        stored.event_type = DEAD_LETTER_EVENT
+    assert await publish_batch(outbox_database, AsyncMock(), now=now) == 1
+    async with outbox_database() as session:
+        assert (await session.scalars(select(PaymentActivity))).all() == []
+
+
+async def test_published_activity_preserves_envelope_generation(outbox_database):
+    now, event = await seed(outbox_database)
+    async with outbox_database() as session, session.begin():
+        stored = await session.get(Outbox, event.id)
+        stored.payload = {**stored.payload, "generation": 2, "attempt": 3}
+    assert await publish_batch(outbox_database, AsyncMock(), now=now) == 1
+    async with outbox_database() as session:
+        activity = await session.scalar(select(PaymentActivity))
+    assert activity.details["generation"] == 2
+    assert activity.attempt == 3

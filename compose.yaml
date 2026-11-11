@@ -7,6 +7,8 @@ x-app: &app
     target: runtime
   environment:
     API_KEY: ${API_KEY:?Copy .env.example to .env and set API_KEY}
+    DEMO_ENABLED: ${DEMO_ENABLED:-false}
+    DEMO_CALLBACK_BASE_URL: ${DEMO_CALLBACK_BASE_URL:-http://api:8000}
     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mcc}:${POSTGRES_PASSWORD:-mcc-local-password}@postgres:5432/${POSTGRES_DB:-mcc_basis}
     RABBITMQ_URL: amqp://${RABBITMQ_USER:-mcc}:${RABBITMQ_PASSWORD:-mcc-local-password}@rabbitmq:5672/
   init: true
