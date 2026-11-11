@@ -1,272 +1,150 @@
-# MCC Basis
+<p align="center">
+  <img src="docs/payflow-banner.svg" alt="Payflow" width="640" />
+</p>
 
-[![Test and publish container](https://github.com/jaFuart/MCC-Basis/actions/workflows/ci.yml/badge.svg)](https://github.com/jaFuart/MCC-Basis/actions/workflows/ci.yml)
+<p align="center">
+  <strong>Весь путь платежа — от запроса до доставленного webhook.</strong><br />
+  Интерактивный стенд асинхронной обработки платежей на FastAPI, PostgreSQL и RabbitMQ.
+</p>
 
-Демонстрация асинхронной обработки платежей с интерактивной панелью: создание платежа, история событий, повторные попытки webhook, DLQ и восстановление доставки. Панель показывает реальные данные PostgreSQL и результат работы consumer через RabbitMQ.
+<p align="center">
+  <a href="https://github.com/jaFuart/payflow/actions/workflows/ci.yml"><img src="https://github.com/jaFuart/payflow/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI: tests and container" /></a>
+  <a href="https://github.com/jaFuart/payflow/releases"><img src="https://img.shields.io/github/v/release/jaFuart/payflow?style=flat-square&amp;color=c65b37" alt="Latest release" /></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.12-3776ab?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.12" /></a>
+</p>
 
-FastAPI принимает запрос, PostgreSQL сохраняет платёж и событие, RabbitMQ передаёт работу отдельному consumer, а consumer отправляет результат на webhook. Платёжный шлюз эмулируется: задержка 2–5 секунд, вероятность успеха обычного платежа 90%. Реальных списаний сервис не выполняет.
+<p align="center">
+  <a href="#быстрый-старт">Быстрый старт</a> ·
+  <a href="#четыре-сценария">Сценарии</a> ·
+  <a href="#как-устроено">Архитектура</a> ·
+  <a href="docs/api.md">API и эксплуатация</a> ·
+  <a href="https://github.com/jaFuart/payflow/releases/tag/v1.1.1">Релиз 1.1.1</a>
+</p>
 
-Стек: Python 3.12, FastAPI, Pydantic v2, асинхронный SQLAlchemy, PostgreSQL 16, RabbitMQ 4, FastStream, Alembic. API и consumer используют один Docker-образ; роли задаются командами запуска.
+![Панель Payflow: платежи, статусы шлюза и доставка webhook](docs/demo-dashboard.png)
 
-![Обзор платежей в MCC Basis](docs/demo-dashboard.png)
+<p align="center">
+  <a href="docs/demo-payment.png">История платежа и HTTP-попытки</a> ·
+  <a href="docs/demo-mobile.png">Мобильная версия</a>
+</p>
 
-[История платежа и попытки доставки](docs/demo-payment.png) · [Мобильная версия](docs/demo-mobile.png)
+Payflow делает обработку событий наблюдаемой: в панели видны результат шлюза, история outbox, повторные попытки webhook и восстановление доставки из DLQ. Счётчики, платежи и история загружаются из PostgreSQL; обработку выполняет отдельный consumer через RabbitMQ.
 
-## Запуск
+**Стек:** FastAPI · Pydantic v2 · SQLAlchemy asyncio · PostgreSQL 16 · RabbitMQ 4 · FastStream · Alembic · Docker Compose.
 
-Нужны Docker Engine или Docker Desktop с Docker Compose v2.
+## Быстрый старт
+
+Нужны Docker Engine или Docker Desktop и Docker Compose v2.
 
 ```bash
+git clone https://github.com/jaFuart/payflow.git
+cd payflow
 cp .env.example .env
-docker compose up --build -d
-docker compose ps
+docker compose up --build -d --wait --wait-timeout 180
 ```
 
-В `.env` задаётся общий статический `API_KEY`. Значения в примере подходят для локальной демонстрации; перед внешним размещением задайте собственные ключ и пароли. API доступен по `http://localhost:8000`, RabbitMQ Management — по `http://localhost:15672`. Учётная запись RabbitMQ из примера: `mcc` / `mcc-local-password`. Оба опубликованных порта привязаны к `127.0.0.1`; PostgreSQL доступен только внутри сети Compose.
+Откройте **[localhost:8000](http://localhost:8000)** и введите `API_KEY` из `.env`. Ключ в примере — `payflow-local-demo-key`. Панель запоминает его в текущей вкладке; выход удаляет ключ. Демосценарии включены в `.env.example` через `DEMO_ENABLED=true`.
 
-Откройте `http://localhost:8000` и введите `API_KEY` из `.env`. Панель хранит ключ в `sessionStorage` текущей вкладки; выход удаляет его. Для встроенных сценариев нужен `DEMO_ENABLED=true`; режим выключен по умолчанию в приложении и включается настройкой локального Compose. `DEMO_CALLBACK_BASE_URL=http://api:8000` задаёт адрес API, доступный consumer внутри сети контейнеров.
+API выполняет миграции перед запуском. PostgreSQL и RabbitMQ сохраняют данные в именованных volumes. RabbitMQ Management доступен на [localhost:15672](http://localhost:15672); учётные данные задаются в `.env`. Опубликованные порты привязаны к `127.0.0.1`.
 
-Миграции выполняются командой API перед запуском Uvicorn. Consumer стартует после готовности API и брокера. Данные PostgreSQL и RabbitMQ сохраняются в именованных Docker volumes.
+## Четыре сценария
 
-```bash
-docker compose logs -f api consumer
-docker compose stop
-docker compose up -d
-```
+Запустите сценарий в панели и откройте карточку платежа: вкладки **История**, **Webhook** и **JSON** показывают последовательность событий и ответы получателя.
 
-`docker compose down` сохраняет данные. Добавление `--volumes` удалит базу и сообщения брокера.
-
-## Пять минут на демо
-
-1. Запустите успешный платёж в панели. Откройте его карточку: видны приём запроса, публикация outbox, результат шлюза и HTTP `204` от встроенного webhook.
-2. Повторите тот же запрос с тем же ключом идемпотентности. Сохранятся UUID и число платежей; другой запрос с этим ключом получит `409`.
-3. Запустите сценарий повторов webhook. В истории появятся `503 → 503 → 204`, а результат шлюза и `processed_at` останутся прежними.
-4. Запустите сценарий DLQ. Платёж получит `succeeded`, но после трёх HTTP `503` доставка будет отмечена как исчерпанная. Результат оплаты и результат доставки показаны отдельно.
-5. Запросите повторную доставку для этого платежа. Встроенный приёмник ответит `204`, история сохранит обе серии попыток, а шлюз повторно не вызывается.
-
-| Сценарий | Результат шлюза | Ответы webhook | Что показывает |
+| Сценарий | Платёж | Webhook | Что можно проследить |
 | --- | --- | --- | --- |
-| Успех (`success`) | `succeeded` | `204` | Полный путь платежа. |
-| Отказ (`decline`) | `failed` | `204` | Отказ шлюза тоже доставляется получателю. |
-| Повторы (`retry`) | `succeeded` | `503`, `503`, `204` | Отложенные попытки без повторной обработки шлюза. |
-| DLQ (`dlq`) | `succeeded` | `503`, `503`, `503` | Исчерпание попыток и последующее восстановление доставки. |
+| **Всё по плану** · `success` | `succeeded` | `204` | Запрос → outbox → очередь → получатель. |
+| **Отказ шлюза** · `decline` | `failed` | `204` | Отказ оплаты тоже доставляется клиенту. |
+| **С третьей попытки** · `retry` | `succeeded` | `503 → 503 → 204` | Отложенные повторы с сохранённым результатом шлюза. |
+| **До последнего** · `dlq` | `succeeded` | `503 × 3 → DLQ` | Исчерпание попыток и отдельный статус доставки. |
 
-В этих четырёх сценариях результат задан явно и сохраняется в отдельном поле платежа. Обычный `POST /api/v1/payments` использует вероятностный эмулятор; пользовательские metadata не управляют поведением шлюза. Встроенный webhook сохраняет каждый прошедший проверку HTTP-запрос, включая повторные обращения одной попытки. История событий и HTTP-попытки остаются в PostgreSQL после перезапуска.
+В карточке нажмите **Повторить запрос**: сохранятся UUID и исходный ключ идемпотентности. Для платежа в DLQ нажмите **Возобновить доставку**: новая серия завершится HTTP `204`, история сохранит обе серии, а результат и время обработки шлюза останутся прежними.
 
-Для демосценария через API:
-
-```bash
-curl http://localhost:8000/api/v1/demo/payments \
-  -H 'X-API-Key: mcc-basis-local-demo-key' \
-  -H 'Idempotency-Key: demo-retry-001' \
-  -H 'Content-Type: application/json' \
-  --data '{"scenario": "retry", "amount": "1490.00", "currency": "RUB"}'
-```
-
-## HTTP API
-
-Все API endpoints, включая `/health`, `/docs` и `/openapi.json`, требуют заголовок `X-API-Key`. Отсутствующий или неверный ключ возвращает `401`. HTML, стили и скрипты панели доступны без ключа; данные загружаются после авторизации. Встроенный приёмник `/demo/webhooks/{payment_id}/{token}` проверяет HMAC-токен, привязанный к платежу, вместо API-заголовка. Создание демоплатежей и приёмник возвращают `404`, когда `DEMO_ENABLED=false`.
-
-### Создать платёж
-
-```bash
-curl -i http://localhost:8000/api/v1/payments \
-  -H 'X-API-Key: mcc-basis-local-demo-key' \
-  -H 'Idempotency-Key: invoice-2026-001' \
-  -H 'Content-Type: application/json' \
-  --data '{
-    "amount": "1500.00",
-    "currency": "RUB",
-    "description": "Оплата заказа 001",
-    "metadata": {"order_id": "001"},
-    "webhook_url": "https://example.com/payments/webhook"
-  }'
-```
-
-`webhook_url` должен вести на ваш доступный HTTP(S) endpoint; URL в примере показывает формат. Внутри контейнера `localhost` указывает на сам контейнер. Для webhook на хосте Docker Desktop используйте `http://host.docker.internal:PORT/path`, а для сервиса в Compose — его имя в сети.
-
-Ответ: `202 Accepted`.
-
-```json
-{
-  "payment_id": "6ac4bca7-4705-4795-8f79-6335c57d794a",
-  "status": "pending",
-  "created_at": "2026-10-14T12:00:00Z"
-}
-```
-
-| Поле | Правило |
-| --- | --- |
-| `amount` | Положительный Decimal, максимум 18 цифр всего и 2 после запятой; предел `9999999999999999.99`. Строка сохраняет точность денежного значения. |
-| `currency` | `RUB`, `USD` или `EUR`. |
-| `description` | Необязательная строка до 1000 символов; по умолчанию `""`. |
-| `metadata` | Необязательный JSON-объект; по умолчанию `{}`. |
-| `webhook_url` | Обязательный HTTP(S) URL до 2048 символов. |
-| `Idempotency-Key` | Обязательный непустой HTTP-заголовок до 255 символов. |
-
-Пропущенный `Idempotency-Key` или некорректные поля возвращают `422`. Неизвестные поля запроса тоже отклоняются.
-
-Ключ идемпотентности уникален в базе. Повтор запроса с тем же ключом и тем же нормализованным телом возвращает `202`, исходные `payment_id` и `created_at`, а также текущий статус этого платежа. Повтор после завершения не запускает обработку заново. Тот же ключ с другим телом возвращает `409`. Порядок ключей JSON, суммы `"1500"` и `"1500.00"`, а также явно переданные значения полей по умолчанию эквивалентны после валидации. Уникальное ограничение PostgreSQL защищает и от одновременных повторных запросов.
-
-### Получить платёж
-
-```bash
-curl http://localhost:8000/api/v1/payments/6ac4bca7-4705-4795-8f79-6335c57d794a \
-  -H 'X-API-Key: mcc-basis-local-demo-key'
-```
-
-Ответ `200` содержит `payment_id`, сумму, валюту, описание, metadata, `idempotency_key`, `webhook_url`, `status`, `created_at`, `processed_at`, `processing_attempts`, `delivery_generation`, `webhook_delivered_at`, `dead_lettered_at` и `last_error`. Сумма сериализуется как строка, даты хранятся в UTC. Неизвестный UUID возвращает `404`, некорректный UUID — `422`.
-
-Статусы платежа: `pending` → `succeeded` или `failed`. Они отражают результат шлюза. Ошибка доставки webhook сохраняет уже полученный результат платежа; состояние доставки видно по отдельным полям. `processing_attempts` — номер текущей попытки обработки/доставки, от 0 до 3; сохранённый результат шлюза используется повторно.
-
-```bash
-curl http://localhost:8000/health -H 'X-API-Key: mcc-basis-local-demo-key'
-curl http://localhost:8000/openapi.json -H 'X-API-Key: mcc-basis-local-demo-key'
-```
-
-Swagger UI находится на `/docs`. Для обращения к нему и загрузки схемы браузер должен отправлять `X-API-Key`; кнопка Authorize задаёт этот ключ для API-запросов после загрузки схемы. Полная спецификация доступна через защищённый `/openapi.json`.
-
-Панель использует дополнительные защищённые endpoints:
-
-| Endpoint | Назначение |
-| --- | --- |
-| `GET /api/v1/payments` | Список платежей: `items`, `total`, `limit`, `offset`. |
-| `GET /api/v1/stats` | Счётчики платежей, доставки и outbox; состояние деморежима. |
-| `GET /api/v1/payments/{id}/events` | Сохранённая история обработки в `items`. |
-| `GET /api/v1/payments/{id}/webhooks` | HTTP-попытки встроенного приёмника для всех серий доставки в `items`. |
-| `POST /api/v1/payments/{id}/redeliver` | Новая серия доставки для платежа с исчерпанными попытками; `202` или `409`, если восстановление недоступно. |
-
-## Webhook и повторные попытки
-
-Consumer отправляет HTTP POST на `webhook_url`. Любой ответ `2xx` означает успешную доставку; остальные коды, ошибки соединения и таймауты приводят к повторной попытке. HTTP redirects автоматически не выполняются. Таймаут — 10 секунд.
-
-```json
-{
-  "event": "payment.processed",
-  "payment_id": "6ac4bca7-4705-4795-8f79-6335c57d794a",
-  "amount": "1500.00",
-  "currency": "RUB",
-  "description": "Оплата заказа 001",
-  "metadata": {"order_id": "001"},
-  "status": "succeeded",
-  "created_at": "2026-10-14T12:00:00+00:00",
-  "processed_at": "2026-10-14T12:00:03+00:00"
-}
-```
-
-На всех попытках сохраняются заголовки:
-
-```text
-Idempotency-Key: <payment_id>
-X-Webhook-ID: <payment_id>
-X-Webhook-Event: payment.processed
-```
-
-В одной серии доставки — максимум три попытки: первая сразу, вторая через 1 секунду после ошибки, третья через 2 секунды после следующей ошибки. К задержке добавляется время доставки и опроса outbox. Обычный отказ шлюза — терминальный `failed`, о котором тоже отправляется webhook; случайный отказ не перезапускает шлюз. Исключения шлюза повторяются в пределах того же лимита.
-
-После исчерпания попыток заполняются `dead_lettered_at` и `last_error`, а событие попадает в очередь `payments.dlq` через exchange `payments.dlx`. Основная очередь — `payments.new`, exchange — `payments`. Неизвестные платежи и повреждённые сообщения также попадают в DLQ. При недоступности PostgreSQL повторы сообщений хранятся в отдельных durable TTL-очередях RabbitMQ `payments.infrastructure-retry.2` и `.3`.
-
-Ручная повторная доставка создаёт событие через outbox, увеличивает `delivery_generation` и сбрасывает счётчик попыток доставки. `status` и `processed_at` сохраняются; запоздавшие сообщения предыдущей серии игнорируются. Повтор доступен только после исчерпания попыток, поэтому одновременные запросы не запускают несколько серий. Встроенный DLQ-сценарий после этого переключается на успешный ответ. При использовании внешнего webhook его доступность нужно восстановить отдельно. Исходное сообщение в RabbitMQ DLQ остаётся для диагностики; повторная доставка не очищает очередь.
-
-## Сохранность и границы гарантий
+## Как устроено
 
 ```mermaid
 flowchart LR
-    A[POST payment] --> B[(PostgreSQL: payment + outbox)]
-    B --> C[Outbox relay]
-    C --> D[(RabbitMQ payments.new)]
-    D --> E[Consumer]
-    E --> F[(Сохранить результат шлюза)]
-    F --> G[HTTP webhook]
-    G -->|Ошибка| B
-    G -->|3 ошибки| H[(payments.dlq)]
+    API["FastAPI · 202"] --> DB[("PostgreSQL<br/>payment + outbox")]
+    DB --> RELAY["Outbox relay"]
+    RELAY -->|payments.new| MQ[("RabbitMQ")]
+    MQ --> WORKER["Consumer"]
+    WORKER -->|"результат сохранён в PostgreSQL"| HOOK["HTTP webhook"]
+    HOOK -->|"ошибка: retry или DLQ-событие"| DB
+    RELAY -->|payments.dlq| DLQ[("DLQ")]
+    classDef app fill:#f8eee6,stroke:#c65b37,color:#24363c
+    classDef store fill:#edf4f1,stroke:#81a796,color:#24363c
+    class API,RELAY,WORKER,HOOK app
+    class DB,MQ,DLQ store
 ```
 
-Платёж и первоначальное событие создаются одной транзакцией. Поэтому принятый платёж остаётся в базе при недоступном брокере и будет опубликован позже. Relay отправляет persistent сообщения с publisher confirms и отмечает событие опубликованным после подтверждения RabbitMQ. Неудачная публикация остаётся в outbox и повторяется с экспоненциальной задержкой до 60 секунд, без ограничения числа попыток. Повтор доставки/обработки ограничен тремя попытками; доставка записи outbox брокеру имеет отдельную политику, чтобы не терять принятые события.
+API и consumer используют один Docker-образ с разными командами запуска. Платёж и первоначальное событие фиксируются одной транзакцией; consumer запускает outbox relay и обрабатывает сообщения с ручным подтверждением.
 
-Основная очередь, очереди отложенных инфраструктурных повторов и DLQ используют quorum queues. Перенос через dead-letter exchange настроен как `at-least-once`, поэтому исходное сообщение сохраняется, пока целевая очередь не подтвердит приём. Compose поднимает один узел RabbitMQ; конфигурация обеспечивает сохранность при перезапуске этого узла, а высокая доступность потребует кластера.
+## Надёжность и границы гарантий
 
-Consumer подтверждает сообщение после фиксации результата либо записи повторного события/DLQ. Блокировки строк сериализуют обработку одного платежа. Результат шлюза сохраняется отдельной транзакцией **до** отправки webhook, поэтому повтор доставки после сбоя не вызывает уже завершённую обработку шлюза заново. Именованные volumes, durable очереди и persistent сообщения сохраняют состояние при перезапуске контейнеров.
+| Механизм | Поведение |
+| --- | --- |
+| **Transactional outbox** | Принятый платёж и событие сохраняются вместе. Недоступность брокера откладывает публикацию. |
+| **Идемпотентность** | Уникальный ключ в PostgreSQL и отпечаток нормализованного запроса; повтор возвращает исходный платёж, другое тело — `409`. |
+| **Подтверждённая публикация** | Persistent сообщения, publisher confirms, обязательная маршрутизация и quorum queues. |
+| **Сохранённый результат шлюза** | Фиксируется до HTTP webhook и используется при повторах доставки. |
+| **Отложенные повторы** | До трёх попыток на серию, задержки 1 и 2 секунды; расписание хранится в outbox. |
+| **Поколения доставки** | Ручное восстановление увеличивает `delivery_generation`; устаревшие сообщения игнорируются. |
+| **История в базе** | События и HTTP-запросы встроенного приёмника сохраняются и доступны после перезапуска. |
 
-Гарантия доставки — **at least once**. Если процесс упадёт после публикации в RabbitMQ, но до фиксации `published_at`, событие может прийти повторно. Если webhook уже принял POST, а consumer упал до записи `webhook_delivered_at`, POST может повториться. Получатель webhook должен дедуплицировать события по `payment_id` или стабильным заголовкам `Idempotency-Key` / `X-Webhook-ID`. У эмулятора нет внешнего денежного побочного эффекта; настоящий шлюз должен поддерживать свой ключ идемпотентности для промежутка между списанием и фиксацией результата в PostgreSQL.
+Доставка — **at least once**: после сбоя публикация или webhook могут повториться. Получатель дедуплицирует события по `payment_id` / `Idempotency-Key`. Compose использует один узел RabbitMQ; высокая доступность потребует кластера.
+
+Шлюз — эмулятор без реальных списаний: задержка 2–5 секунд, вероятность успеха обычного платежа 90%. Четыре демосценария имеют заданный результат. При подключении настоящего шлюза нужен его собственный ключ идемпотентности для сбоя между списанием и фиксацией результата в базе.
+
+## API
+
+Все API-запросы требуют `X-API-Key`; создание платежа — также `Idempotency-Key`. Приёмник демосценариев использует отдельный HMAC-токен.
+
+| Метод | Endpoint | Назначение |
+| --- | --- | --- |
+| `POST` | `/api/v1/payments` | Принять платёж, ответ `202`. |
+| `GET` | `/api/v1/payments` | Список, фильтры, поиск и пагинация. |
+| `GET` | `/api/v1/payments/{id}` | Результат шлюза и состояние доставки. |
+| `GET` | `/api/v1/payments/{id}/events` | История обработки. |
+| `GET` | `/api/v1/payments/{id}/webhooks` | HTTP-попытки встроенного приёмника. |
+| `POST` | `/api/v1/payments/{id}/redeliver` | Новая серия доставки после исчерпания попыток. |
+| `GET` | `/api/v1/stats` | Счётчики платежей, доставки и outbox. |
+| `POST` | `/api/v1/demo/payments` | Запустить выбранный демосценарий. |
+
+Примеры запросов, правила валидации, формат webhook, авторизация Swagger и проверки перезапуска — в **[API и эксплуатация](docs/api.md)**.
 
 ## Проверка
 
-Проверки текущей версии: 99 модульных и API-тестов; исходный контракт, четыре демосценария и восстановление доставки на PostgreSQL 16 / RabbitMQ 4. После перезапуска всех четырёх сервисов отдельно проверены сохранность платежей, идемпотентность и сообщение DLQ.
-
-Модульные тесты проверяют валидацию, идемпотентность, повторы, outbox и обработку сообщений. Для локального запуска нужен `uv`:
+**99 модульных и API-тестов**, интеграционные проверки на PostgreSQL 16 / RabbitMQ 4, все четыре демосценария и восстановление DLQ. Отдельно проверена сохранность платежей, идемпотентности и сообщения DLQ после перезапуска четырёх сервисов. CI выполняет проверки перед публикацией контейнера.
 
 ```bash
 uv sync --frozen
 uv run pytest
 uv run ruff check .
-```
-
-Проверка всех четырёх сценариев панели, HTTP-истории, событий, фактической DLQ и восстановления доставки выполняется на настоящих PostgreSQL и RabbitMQ:
-
-```bash
+docker compose exec -T api python scripts/smoke.py
 docker compose exec -T api python scripts/demo_smoke.py
 ```
 
-Нужен включённый деморежим. Проверка создаёт платежи с уникальными ключами и сохраняет данные, чтобы результаты можно было открыть в панели. Повторная доставка проверяется отдельно от обработки шлюза: UUID, сумма, результат и время обработки должны сохраниться.
+Для локальных тестов нужны Python 3.12 и `uv`; интеграционные скрипты выполняются в запущенном Compose. [Перезапуск и простой consumer →](docs/api.md#проверка-перезапуска-и-outbox)
 
-Интеграционная проверка работает с уже запущенными контейнерами, настоящими PostgreSQL и RabbitMQ. Скрипт запускает внутри API временный webhook на порту 8090; consumer обращается к нему по имени `api`. Дополнительные порты на хост не открываются.
+## Готовый контейнер
 
-```bash
-docker compose exec -T api python scripts/smoke.py
-```
-
-Проверяются авторизация, контракт и валидация API, восемь одновременных идемпотентных запросов, конфликт ключа, webhook с ответами `500 → 500 → 204`, экспоненциальные задержки, повторное сообщение для завершённого платежа, а также три ошибки webhook и фактическое сообщение в DLQ. Скрипт создаёт платежи с уникальными тестовыми UUID, не удаляет данные, а просматриваемые DLQ-сообщения возвращает в очередь. Вероятностный ответ шлюза допустим: проверка принимает и `succeeded`, и `failed`.
-
-Для проверки сохранности после перезапуска сначала выполните полный smoke test, затем:
+В [релизе 1.1.1](https://github.com/jaFuart/payflow/releases/tag/v1.1.1) доступны **[Payflow.zip](https://github.com/jaFuart/payflow/releases/download/v1.1.1/Payflow.zip)** с исходниками, **[Payflow-container.tar.gz](https://github.com/jaFuart/payflow/releases/download/v1.1.1/Payflow-container.tar.gz)** с образом и **[Payflow.sha256](https://github.com/jaFuart/payflow/releases/download/v1.1.1/Payflow.sha256)** с контрольными суммами. Распакуйте исходники, поместите контейнерный архив рядом с `compose.yaml` и выполните:
 
 ```bash
-docker compose restart postgres rabbitmq api consumer
-docker compose up -d --no-recreate --wait --wait-timeout 180
-docker compose exec -T api python scripts/smoke.py --verify-only
-```
-
-Скрипт ждёт готовности API и проверяет сохранённые платежи, их даты и результат, ключ идемпотентности и сообщение DLQ. Checkpoint находится в `/tmp/mcc-basis-smoke.json` контейнера API и сохраняется при `restart`. Команда `up --force-recreate` пересоздаст контейнер и удалит этот временный checkpoint; volumes базы и брокера при этом сохранятся.
-
-Чтобы проверить доставку принятого платежа после простоя consumer:
-
-```bash
-docker compose stop consumer
-docker compose exec -T api python scripts/smoke.py --seed-pending
-docker compose exec -T api python scripts/smoke.py --resume-pending
-```
-
-`--seed-pending` создаёт платёж и напрямую проверяет в PostgreSQL, что он остался `pending`, а запись outbox сохранена и ещё не опубликована. `--resume-pending` запускает webhook и печатает `READY`. После этого во втором терминале выполните:
-
-```bash
-docker compose start consumer
-```
-
-Первый терминал проверит успешную доставку, отсутствие повторного создания платежа и отметку `published_at` исходного события. Отдельный checkpoint `/tmp/mcc-basis-pending.json` сохраняет данные этого сценария. Чтобы одновременно проверить отсутствие брокера, после остановки consumer остановите `rabbitmq`, а при восстановлении поднимите оба сервиса через `docker compose up -d --wait rabbitmq consumer`; для более долгого запуска задайте `--resume-pending --timeout 180`.
-
-## Готовый образ
-
-Если образ передан архивом `MCC-Basis-container.tar.gz`, загрузите его и запустите Compose без сборки:
-
-```bash
-docker load -i MCC-Basis-container.tar.gz
+docker load -i Payflow-container.tar.gz
 cp .env.example .env
-docker compose up -d --no-build
+docker compose up -d --no-build --wait --wait-timeout 180
 ```
 
-GitHub Actions запускает проверки и сборку Docker-образа. При push в `main` публикуется `ghcr.io/jafuart/mcc-basis:latest` и тег с SHA коммита; pull request проходит проверки и сборку без публикации. Для сборки из исходников используется `docker compose up --build -d`.
+GHCR-образ `ghcr.io/jafuart/payflow:1.1.1` требует авторизации с `read:packages`; контейнерный архив в публичном релизе доступен без неё. [Запуск через GHCR →](docs/api.md#готовый-образ-и-ghcr)
 
-После публикации образа можно указать в `.env`:
+## Структура проекта
 
-```dotenv
-APP_IMAGE=ghcr.io/jafuart/mcc-basis:latest
+```text
+app/          API, consumer, outbox relay, демосценарии и панель
+migrations/   Миграции Alembic
+tests/        Валидация, идемпотентность, обработка, восстановление
+scripts/      Интеграционные проверки на запущенных сервисах
+docs/         API, эксплуатация и скриншоты
+compose.yaml  PostgreSQL, RabbitMQ, API и consumer
 ```
-
-```bash
-docker compose pull api consumer
-docker compose up -d --no-build
-```
-
-Если пакет GHCR закрытый, предварительно выполните `docker login ghcr.io` с GitHub-токеном, имеющим `read:packages`.
-
-Основной код находится в `app/main.py` (API), `app/worker.py` (consumer), `app/outbox.py` (relay), `app/broker.py` (топология RabbitMQ). Миграции — в `migrations/versions`, Compose — в `compose.yaml`, интеграционная проверка — в `scripts/smoke.py`.

@@ -39,8 +39,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="MCC Basis",
-    version="1.1.0",
+    title="Payflow",
+    version="1.1.1",
     description="Payment processing playground with a durable event trail and webhook recovery.",
     docs_url=None,
     redoc_url=None,
@@ -96,7 +96,7 @@ async def openapi():
 
 @api.get("/docs", include_in_schema=False)
 async def docs():
-    return get_swagger_ui_html(openapi_url="/openapi.json", title="MCC Basis — API")
+    return get_swagger_ui_html(openapi_url="/openapi.json", title="Payflow — API")
 
 
 @api.post("/api/v1/payments", status_code=202, response_model=PaymentAccepted)

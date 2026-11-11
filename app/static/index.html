@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#18252b" />
     <meta
       name="description"
-      content="MCC Basis — интерактивный стенд асинхронной обработки платежей, повторных доставок webhook и Outbox."
+      content="Payflow — интерактивный стенд асинхронной обработки платежей, повторных доставок webhook и Outbox."
     />
-    <title>MCC Basis · Payment playground</title>
+    <title>Payflow · Payment playground</title>
     <link rel="icon" href="/assets/mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/assets/dashboard.css" />
     <script src="/assets/dashboard.js" defer></script>
@@ -83,13 +83,13 @@
     </svg>
 
     <aside class="sidebar">
-      <a class="brand" href="#overview" aria-label="MCC Basis — обзор"
+      <a class="brand" href="#overview" aria-label="Payflow — обзор"
         ><img src="/assets/mark.svg" width="37" height="37" alt="" /><span
-          >MCC <b>Basis</b><small>PAYMENT PLAYGROUND</small></span
+          >Pay<b>flow</b><small>PAYMENT PLAYGROUND</small></span
         ></a
       >
       <div class="workspace">
-        <span class="workspace-icon">M</span>
+        <span class="workspace-icon">P</span>
         <div>Демонстрационный стенд<small>Локальное окружение</small></div>
         <span class="workspace-chevron">⌄</span>
       </div>
@@ -124,7 +124,7 @@
       </div>
       <div class="sidebar-bottom">
         <a
-          href="https://github.com/jaFuart/MCC-Basis"
+          href="https://github.com/jaFuart/payflow"
           target="_blank"
           rel="noopener noreferrer"
           ><svg class="icon"><use href="#i-code" /></svg>Исходный код<svg
@@ -133,7 +133,7 @@
             <use href="#i-external" /></svg
         ></a>
         <div class="sidebar-version">
-          <span><i class="live-dot"></i> v1.1 · Demo environment</span
+          <span><i class="live-dot"></i> v1.1.1 · Demo environment</span
           ><button
             id="logout"
             class="logout"
@@ -163,14 +163,14 @@
             title="Сменить API-ключ"
             aria-label="Сменить API-ключ"
           >
-            MB
+            PF
           </button>
         </div>
       </header>
       <main>
         <div class="page-heading">
           <div>
-            <div class="eyebrow">MCC BASIS / OPERATIONS</div>
+            <div class="eyebrow">PAYFLOW / OPERATIONS</div>
             <h1 id="page-title">
               Платежи под контролем<span class="title-dot">.</span>
             </h1>
@@ -514,7 +514,7 @@
 
         <footer class="page-footer">
           <span
-            >MCC Basis <span class="footer-separator">/</span> Asynchronous
+            >Payflow <span class="footer-separator">/</span> Asynchronous
             payment processing</span
           ><span
             >FastAPI <i>·</i> PostgreSQL <i>·</i> RabbitMQ
@@ -620,7 +620,7 @@
     <dialog id="auth-modal" class="modal auth-modal">
       <form id="auth-form">
         <img src="/assets/mark.svg" width="47" height="47" alt="" />
-        <div class="eyebrow">MCC BASIS · PAYMENT PLAYGROUND</div>
+        <div class="eyebrow">PAYFLOW · PAYMENT PLAYGROUND</div>
         <h2>Подключиться к стенду</h2>
         <p>
           Введите API-ключ из файла .env.<br />Он сохранится только в этой

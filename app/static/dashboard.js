@@ -1,9 +1,11 @@
 "use strict";
 
+sessionStorage.removeItem("mcc.basis.apiKey");
+
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const state = {
-  key: sessionStorage.getItem("mcc.basis.apiKey") || "",
+  key: sessionStorage.getItem("payflow.apiKey") || "",
   view: "overview",
   filter: "all",
   search: "",
@@ -25,7 +27,7 @@ const state = {
 };
 const scenarios = {
   success: {
-    name: "Подписка Basis Pro",
+    name: "Подписка Payflow Pro",
     amount: "2490.00",
     label: "Всё по плану",
   },
@@ -132,7 +134,7 @@ async function api(path, options = {}) {
   if (response.status === 401) {
     state.key = "";
     state.connected = false;
-    sessionStorage.removeItem("mcc.basis.apiKey");
+    sessionStorage.removeItem("payflow.apiKey");
     showAuth();
     throw new Error("API-ключ не принят. Проверьте значение API_KEY в .env.");
   }
@@ -524,7 +526,7 @@ $("#auth-form").addEventListener("submit", async (event) => {
   $("#auth-error").hidden = true;
   try {
     await api("/health");
-    sessionStorage.setItem("mcc.basis.apiKey", state.key);
+    sessionStorage.setItem("payflow.apiKey", state.key);
     $("#auth-modal").close();
     $("#api-key-input").value = "";
     await refresh();
@@ -540,7 +542,7 @@ for (const button of [$("#logout"), $("#mobile-logout")]) {
   button.addEventListener("click", () => {
     closePayment();
     state.key = "";
-    sessionStorage.removeItem("mcc.basis.apiKey");
+    sessionStorage.removeItem("payflow.apiKey");
     connection(false);
     showAuth();
   });
@@ -672,7 +674,7 @@ $("#download-schema").addEventListener("click", async () => {
     );
     const link = document.createElement("a");
     link.href = url;
-    link.download = "mcc-basis-openapi.json";
+    link.download = "payflow-openapi.json";
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (error) {

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="196" viewBox="0 0 880 196" fill="none">
+  <rect x=".5" y=".5" width="879" height="195" rx="23.5" fill="#F6F5F0" stroke="#E7E2D8"/>
+  <path d="M646 1v194M714 1v194M782 1v194M879 65H606M879 131H606" stroke="#E8E4DA"/>
+  <path d="M646 65h68v66h68" stroke="#D4AB8C" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 7"/>
+  <circle cx="646" cy="65" r="6" fill="#C65B37"/><circle cx="782" cy="131" r="6" fill="#4D8268"/>
+  <rect x="52" y="59" width="78" height="78" rx="23" fill="#C65B37"/>
+  <path d="M76 114V80h17a11 11 0 0 1 0 22H76m21 12h13m-5-5 5 5-5 5" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="157" y="106" fill="#243238" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="56" font-weight="600" letter-spacing="-2">Payflow</text>
+  <text x="159" y="137" fill="#75838A" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">Asynchronous payments, visible end to end.</text>
+  <rect x="680" y="46" width="105" height="36" rx="9" fill="white" stroke="#E5DED3"/>
+  <text x="695" y="69" fill="#8C725D" font-family="Consolas,monospace" font-size="12">202 ACCEPTED</text>
+  <rect x="744" y="113" width="102" height="36" rx="9" fill="#26383F"/>
+  <text x="758" y="136" fill="#B4D1C2" font-family="Consolas,monospace" font-size="12">204 SENT</text>
+</svg>

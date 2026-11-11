@@ -1,7 +1,7 @@
-name: mcc-basis
+name: payflow
 
 x-app: &app
-  image: ${APP_IMAGE:-mcc-basis:local}
+  image: ${APP_IMAGE:-payflow:local}
   build:
     context: .
     target: runtime

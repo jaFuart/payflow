@@ -1,11 +1,11 @@
 @font-face {
-  font-family: Basis;
+  font-family: PayflowSans;
   src: local("Inter"), local("Arial");
   font-display: swap;
 }
 :root {
   font-family:
-    Basis,
+    PayflowSans,
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",

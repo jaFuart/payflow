@@ -488,9 +488,9 @@ async def main() -> None:
     args = parser.parse_args()
     if args.checkpoint is None:
         args.checkpoint = (
-            "/tmp/mcc-basis-pending.json"
+            "/tmp/payflow-pending.json"
             if args.seed_pending or args.resume_pending
-            else "/tmp/mcc-basis-smoke.json"
+            else "/tmp/payflow-smoke.json"
         )
     api_key = os.environ["API_KEY"]
     async with httpx.AsyncClient(

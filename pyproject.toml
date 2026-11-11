@@ -1,7 +1,7 @@
 [project]
-name = "mcc-basis"
-version = "1.1.0"
-description = "Asynchronous payment processing with a transactional outbox"
+name = "payflow"
+version = "1.1.1"
+description = "Payment processing playground with durable events and webhook recovery"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.115,<1",
@@ -14,6 +14,10 @@ dependencies = [
     "httpx>=0.28,<1",
     "uvicorn[standard]>=0.34,<1",
 ]
+
+[project.urls]
+Repository = "https://github.com/jaFuart/payflow"
+Documentation = "https://github.com/jaFuart/payflow#readme"
 
 [dependency-groups]
 dev = ["pytest>=8.3,<10", "pytest-asyncio>=0.25,<2", "aiosqlite>=0.20,<1", "ruff>=0.9,<1"]
